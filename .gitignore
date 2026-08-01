@@ -1,0 +1,32 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Reports
+reports/
+allure-results/
+allure-report/
+
+# Logs
+*.log
+
+# Environment files
+.env
+*.env
+
+# IDE
+.idea/
+.vscode/
+
+# Node / MCP
+node_modules/
+
+# AI generated outputs
+aiOutputs/generatedCode/
+aiOutputs/healingReports/
+
+# OS files
+.DS_Store
+Thumbs.db
