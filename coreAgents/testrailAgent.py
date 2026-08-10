@@ -207,23 +207,12 @@ class TestRailAgent:
             f"{timestamp}"
         )
 
-        description = (
-            "Automation execution from Python Playwright Pytest framework.\n\n"
-            f"Environment: {env_name}\n"
-            f"Browser: {browser}\n"
-            f"Marker: {marker}\n"
-        )
-
-        if allure_report_link:
-            description += f"\nAllure Report: {allure_report_link}\n"
-
         case_ids = sorted(
             list({result["case_id"] for result in cls.TEST_RESULTS})
         )
 
         payload = {
             "name": run_name,
-            "description": description,
             "include_all": cls.INCLUDE_ALL_CASES,
             "case_ids": case_ids,
         }
