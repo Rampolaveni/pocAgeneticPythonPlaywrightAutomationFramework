@@ -943,7 +943,7 @@ TestRailAgent publishes results for each case ID
 Optional Allure report link is included in the result comment
 ----
 
-== Project Structure From Uploaded Repository
+== Project Structure
 
 [source,text]
 ----
@@ -1096,39 +1096,9 @@ Expected generator output:
 aiOutputs/recommendations/product_search_add_to_cart_recommendations.md
 ----
 
-== CI / Jenkins Notes
-
-A `Jenkinsfile` was not present in the uploaded ZIP. The deterministic framework is still CI-ready because it can be driven through the standard Pytest command.
-
-A Jenkins pipeline can run:
-
-[source,powershell]
-----
-python -m pytest -m sanity --env=qa --browser chromium --report=true --testrail=false --junitxml=reports\junit\pytest-results.xml -s
-----
-
-Recommended Jenkins stages:
-
-[source,text]
-----
-Checkout
-  ↓
-Create virtual environment
-  ↓
-Install requirements
-  ↓
-Install Playwright browser
-  ↓
-Run Pytest
-  ↓
-Archive reports/logs/JUnit XML
-  ↓
-Publish Allure / JUnit results
-----
-
 == Git Hygiene Recommendations
 
-The uploaded ZIP contains runtime and local-development files such as `.venv/`, `.idea/`, `.pytest_cache/`, `reports/`, and `.git/` internals.
+Contains runtime and local-development files such as `.venv/`, `.idea/`, `.pytest_cache/`, `reports/`, and `.git/` internals.
 
 Recommended `.gitignore` entries:
 
@@ -1146,36 +1116,6 @@ node_modules/
 ----
 
 Keep source files, prompts, and approved documentation in Git. Do not commit virtual environments, generated reports, local IDE metadata, API keys, or secrets.
-
-== Current Repository Inspection Notes
-
-The README above describes the uploaded project as it exists in the ZIP. During inspection, these practical improvement points were also observed:
-
-[cols="1,2", options="header"]
-|===
-| Area | Note
-
-| Logging
-| `LoggerAgent` creates a `RotatingFileHandler` using `reports/logs/...`. To make fresh checkouts safer, create the log directory before creating the file handler.
-
-| Screenshots
-| `ActionAgent.take_screenshot()` references `PathAgent.SCREENSHOTS_DIR`, but that path is not defined in the inspected `PathAgent`.
-
-| Registration flow
-| `registerPageLocators.py` contains an email locator using `name='ehg mail'`, which appears incorrect for OpenCart registration email fields.
-
-| Registration checkbox
-| `RegisterPageDAO.clickOnCheckboxPrivacyPolicy()` calls `self.check(...)`, but `ActionAgent` currently does not define a `check()` method.
-
-| Search assertion
-| `ProductScenarios.verify_product_search()` asserts `"iMacv" in productsList`; the recorded and product flow evidence points to `iMac`.
-
-| TestRail security
-| Move TestRail credentials to environment variables or Jenkins credentials. Do not keep real keys in source control.
-
-| CI pipeline
-| A Jenkinsfile was not found in the uploaded ZIP. Add one when the framework is ready for CI execution.
-|===
 
 == Recommended Framework Naming Improvements
 
