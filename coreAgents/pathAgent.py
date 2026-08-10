@@ -18,6 +18,7 @@ class PathAgent:
     CORE_AGENTS_DIR = ROOT_DIR / "coreAgents"
     TESTS_DIR = ROOT_DIR / "tests"
     REPORTS_DIR = ROOT_DIR / "reports"
+    JUNIT_DIR = REPORTS_DIR / "junit"
 
     # AI Agents
     AI_OUTPUTS_DIR = ROOT_DIR / "aiOutputs"
@@ -39,6 +40,7 @@ class PathAgent:
 
         cls.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
         cls.LOGS_DIR.mkdir(parents=True, exist_ok=True)
+        cls.JUNIT_DIR.mkdir(parents=True, exist_ok=True)
         cls.ALLURE_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
         cls.ALLURE_REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
