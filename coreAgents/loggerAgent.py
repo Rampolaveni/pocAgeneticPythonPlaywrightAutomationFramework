@@ -76,6 +76,8 @@ class LoggerAgent:
         if cls.FILE_HANDLER:
             return cls.FILE_HANDLER
 
+        cls.LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+
         file_formatter = logging.Formatter(
             fmt="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",

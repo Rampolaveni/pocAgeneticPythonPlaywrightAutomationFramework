@@ -1,0 +1,1168 @@
+= Agentic Python Playwright Pytest Automation Framework
+:toc: left
+:toclevels: 4
+:sectnums:
+:icons: font
+:source-highlighter: rouge
+
+== Overview
+This repository contains a Python Playwright Pytest automation framework for the OpenCart demo application.
+
+The framework is intentionally separated into two major layers:
+
+. *Deterministic Framework Layer* — the real automation execution framework that runs tests through Pytest, Playwright, Allure, and optional TestRail integration.
+. *AI Assist Layer* — an optional agentic layer that uses Playwright Codegen recordings and prompt-based planner/generator agents to create test plans and implementation recommendations.
+
+The most important design principle is:
+
+[IMPORTANT]
+====
+The AI layer does not run inside the normal test execution path.
+
+Jenkins / Pytest execution remains deterministic. AI is used only to assist with recording, planning, code recommendation, and future maintenance.
+====
+
+== Technology Stack
+
+[cols="1,2", options="header"]
+|===
+| Technology | Purpose
+
+| Python
+| Main programming language for the automation framework.
+
+| Pytest
+| Test runner, fixture engine, marker support, and reporting hook integration.
+
+| Playwright Python Sync API
+| Browser automation engine used by the deterministic test framework.
+
+| pytest-playwright
+| Provides Playwright fixtures and Pytest command-line options such as `--browser` and `--headed`.
+
+| Allure Pytest
+| Produces raw Allure results and supports test steps, screenshots, features, stories, and severity metadata.
+
+| Allure Commandline
+| Converts `reports/allure-results/` into generated HTML reports under `reports/allure-reports/`.
+
+| TestRail API
+| Optional publishing of Pytest results to TestRail using `@pytest.mark.testrail(case_id="...")`.
+
+| Playwright Codegen
+| Used by the AI assist layer to record real user flows.
+
+| Agent Prompts
+| Planner and generator prompt files used to convert recordings into test plans and code recommendations.
+|===
+
+== High-Level Architecture
+
+[source,text]
+----
+Repository
+│
+├── Deterministic Framework Layer
+│   ├── conftest.py
+│   ├── config/
+│   ├── coreAgents/
+│   ├── pageObjectLocators/
+│   ├── dao/
+│   ├── scenarios/
+│   ├── tests/
+│   └── reports/
+│
+└── AI Assist Layer
+    ├── aiAgents/
+    ├── aiInputs/
+    │   ├── recordings/
+    │   ├── runs/
+    │   └── prompts/
+    └── aiOutputs/
+        ├── plans/
+        └── recommendations/
+----
+
+== Deterministic Framework Layer
+
+The deterministic layer is the real automation framework. It is responsible for test execution, browser management, page actions, business scenarios, assertions, reporting, and TestRail publishing.
+
+It follows this execution model:
+
+[source,text]
+----
+Pytest Test
+  ↓
+Scenario Layer
+  ↓
+DAO Layer
+  ↓
+ActionAgent
+  ↓
+Page Object Locators
+  ↓
+Playwright Page
+  ↓
+Application Under Test
+----
+
+=== Deterministic Layer Responsibilities
+
+[cols="1,2", options="header"]
+|===
+| Area | Responsibility
+
+| `conftest.py`
+| Pytest control center. Defines command-line options, Pytest hooks, browser fixtures, page fixtures, `RuntimeAgent`, Allure lifecycle, and TestRail publishing lifecycle.
+
+| `config/`
+| Environment configuration for QA, UAT, and PROD plus global framework settings.
+
+| `coreAgents/`
+| Core reusable agents such as `ConfigAgent`, `PathAgent`, `LoggerAgent`, `RuntimeAgent`, `ActionAgent`, `AllureAgent`, and `TestRailAgent`.
+
+| `pageObjectLocators/`
+| Locator classes only. Each class stores Playwright locator objects for a page or component.
+
+| `dao/`
+| Page-level action layer. DAO classes extend `ActionAgent` and perform actions such as click, fill, read text, and dynamic element selection.
+
+| `scenarios/`
+| Business-flow layer. Scenario classes combine DAO methods and perform functional assertions.
+
+| `tests/`
+| Thin Pytest tests. Tests call scenario methods and provide markers such as `sanity` and `testrail`.
+
+| `reports/`
+| Runtime output folder for logs, Allure raw results, generated Allure HTML reports, and screenshots/attachments where applicable.
+|===
+
+=== `conftest.py` Execution Control
+
+`conftest.py` wires the complete deterministic framework together.
+
+It adds custom Pytest options:
+
+[source,text]
+----
+--env        qa / uat / prod
+--testrail   true / false
+--report     true / false
+----
+
+It also uses pytest-playwright options such as:
+
+[source,text]
+----
+--browser chromium
+--headed
+----
+
+The main Pytest lifecycle implemented in this repository is:
+
+[source,text]
+----
+pytest_configure
+  ↓
+sets Allure raw result path when --report=true
+
+pytest_sessionstart
+  ↓
+prepares allure-results when --report=true
+
+configAgent fixture
+  ↓
+loads environment config and runtime command values
+
+browserInstance fixture
+  ↓
+launches Chromium / Firefox / WebKit once per session
+
+isolatedBrowserContext fixture
+  ↓
+creates a fresh isolated context per test
+
+browserPage fixture
+  ↓
+creates a new page, opens base URL, attaches page to request.node
+
+runtimeAgent fixture
+  ↓
+creates RuntimeAgent for each test
+
+pytest_runtest_makereport
+  ↓
+captures test outcome, attaches failure screenshots, captures TestRail results
+
+pytest_sessionfinish
+  ↓
+generates final Allure HTML report and optionally publishes TestRail results
+----
+
+=== Configuration Layer
+
+The configuration layer is stored under `config/`.
+
+[source,text]
+----
+config/
+├── global_config.py
+├── qa_config.py
+├── uat_config.py
+└── prod_config.py
+----
+
+`global_config.py` contains shared execution settings:
+
+[source,python]
+----
+GLOBAL_CONFIG = {
+    "slow_mo": 0,
+    "playwright_timeout": 30000,
+    "viewport": {
+        "width": 1366,
+        "height": 768,
+    },
+    "locale": "en-AU",
+    "timezone_id": "Australia/Melbourne",
+    "video": "retain-on-failure",
+    "tracing": "retain-on-failure",
+    "screenshot": "only-on-failure",
+    "ignore_https_errors": True,
+    "accept_downloads": True,
+}
+----
+
+Environment-specific files provide the base URL and credentials:
+
+[source,python]
+----
+QA_CONFIG = {
+    "base_url": "https://tutorialsninja.com/demo/index.php?route=common/home",
+    "adminCredentials": {
+        "valid_email": "qa_user@example.com",
+        "valid_password": "123456",
+    },
+}
+----
+
+`ConfigAgent` combines:
+
+[source,text]
+----
+GLOBAL_CONFIG
+  + selected environment config
+  + runtime command-line values
+----
+
+Example access pattern:
+
+[source,python]
+----
+self.runtimeAgent.get_config_value("base_url")
+self.runtimeAgent.get_config_value("adminCredentials.valid_email")
+self.runtimeAgent.get_config_value("playwright_timeout")
+----
+
+=== Core Agents
+
+==== `PathAgent`
+
+`coreAgents/pathAgent.py` centralizes framework paths.
+
+Important paths discovered in the repository:
+
+[source,text]
+----
+ROOT_DIR
+CONFIG_DIR
+CORE_AGENTS_DIR
+TESTS_DIR
+REPORTS_DIR
+LOGS_DIR
+ALLURE_RESULTS_DIR
+ALLURE_REPORTS_DIR
+AI_OUTPUTS_DIR
+TEST_PLANS_DIR
+GENERATED_CODE_DIR
+HEALING_REPORTS_DIR
+----
+
+`PathAgent.create_framework_directories()` creates required runtime folders for reports and AI outputs.
+
+==== `LoggerAgent`
+
+`coreAgents/loggerAgent.py` creates centralized execution logs.
+
+Current log pattern:
+
+[source,text]
+----
+reports/logs/test_run_YYYYMMDD_HHMMSS.log
+----
+
+It provides:
+
+[source,text]
+----
+get_logger(logger_name)
+get_log_file()
+get_log_file_name()
+cleanup_old_logs()
+----
+
+==== `ConfigAgent`
+
+`coreAgents/configAgent.py` validates and exposes runtime configuration.
+
+Important methods:
+
+[source,text]
+----
+apply_runtime_values()
+validate_config()
+get_value("nested.key.path")
+set_value("nested.key.path", value)
+as_dict()
+----
+
+==== `RuntimeAgent`
+
+`coreAgents/runtimeAgent.py` is the main test-facing object.
+
+Each Pytest test receives this fixture:
+
+[source,python]
+----
+def test_userLogin(runtimeAgent):
+    LoginScenarios(runtimeAgent).verify_successful_login()
+----
+
+`RuntimeAgent` currently holds:
+
+[source,text]
+----
+Playwright page
+ConfigAgent
+ActionAgent
+HomePageDAO
+LoginPageDAO
+MyAccountPageDAO
+RegisterPageDAO
+ProductPageDAO
+----
+
+This design lets scenario classes access all page DAOs through one runtime object:
+
+[source,python]
+----
+self.runtimeAgent.homePageDao.navigate_to_login_page()
+self.runtimeAgent.loginPageDao.enterUserEmailAndPassword()
+self.runtimeAgent.myAccountPageDao.getMyAccountText()
+----
+
+==== `ActionAgent`
+
+`coreAgents/actionAgent.py` is the reusable Playwright action wrapper.
+
+Current action methods include:
+
+[source,text]
+----
+click(target, description="")
+fill(target, value, description="")
+get_text(target, description="")
+is_visible(target, timeout=5000, description="")
+wait_for_url_contains(partial_url)
+wait_for_page_load()
+take_screenshot(screenshot_name)
+----
+
+It accepts either:
+
+[source,text]
+----
+Playwright Locator object
+selector string
+----
+
+Example usage from DAO:
+
+[source,python]
+----
+self.click(self.homePageLocators.myAccountDropdownHomepage)
+self.fill(self.loginPageLocators.userEmail, "user@example.com")
+----
+
+==== `AllureAgent`
+
+`coreAgents/allureAgent.py` centralizes Allure reporting.
+
+Responsibilities:
+
+[source,text]
+----
+prepare_allure_results()
+write_environment_file(config_agent)
+write_executor_file()
+attach_screenshot(page, screenshot_name)
+attach_failure_screenshot(page, test_name)
+generate_html_report()
+cleanup_old_reports()
+----
+
+Allure flow:
+
+[source,text]
+----
+--report=true
+  ↓
+pytest_configure sets allure result path
+  ↓
+pytest_sessionstart cleans/creates reports/allure-results
+  ↓
+Tests execute and Allure raw JSON is created
+  ↓
+Failure screenshot is attached directly to Allure
+  ↓
+pytest_sessionfinish generates HTML report
+  ↓
+reports/allure-reports/allure_report_YYYYMMDD_HHMMSS/
+----
+
+The current implementation keeps the latest 5 generated Allure report folders.
+
+==== `TestRailAgent`
+
+`coreAgents/testrailAgent.py` optionally publishes test results to TestRail.
+
+It works with test markers:
+
+[source,python]
+----
+@pytest.mark.testrail(case_id='C46')
+@pytest.mark.sanity
+def test_userLogin(runtimeAgent):
+    LoginScenarios(runtimeAgent).verify_successful_login()
+----
+
+TestRail flow:
+
+[source,text]
+----
+pytest_runtest_makereport
+  ↓
+capture result and TestRail case ID
+  ↓
+pytest_sessionfinish
+  ↓
+create one TestRail run
+  ↓
+publish each captured result using add_result_for_case
+----
+
+Status mapping:
+
+[cols="1,1", options="header"]
+|===
+| Pytest outcome | TestRail status
+
+| passed
+| 1 / Passed
+
+| skipped
+| 2 / Blocked
+
+| failed
+| 5 / Failed
+|===
+
+[CAUTION]
+====
+The uploaded code contains TestRail defaults in `testrailAgent.py`. For a production-quality repository, do not hardcode TestRail usernames or API keys. Use environment variables or Jenkins credentials instead, and rotate any API key that may have been committed.
+====
+
+=== Page Object Locator Layer
+
+Locator classes are stored under `pageObjectLocators/`.
+
+[source,text]
+----
+pageObjectLocators/
+├── homePageLocators.py
+├── loginPageLocators.py
+├── myAccountPageLocators.py
+├── productPageLocators.py
+└── registerPageLocators.py
+----
+
+These classes store Playwright locator objects only.
+
+Example style from the repository:
+
+[source,python]
+----
+self.myAccountDropdownHomepage = self.page.locator("//span[text()='My Account']")
+self.loginButtonHomepage = self.page.locator("//a[text()='Login']")
+self.userEmail = self.page.locator("//input[@name='email']")
+self.searchBar = self.page.locator("//input[@name='search']")
+----
+
+Locator layer rule:
+
+[source,text]
+----
+Locators only.
+No actions.
+No assertions.
+No business flow.
+----
+
+=== DAO Layer
+
+DAO classes are stored under `dao/`.
+
+[source,text]
+----
+dao/
+├── homePageDao.py
+├── loginPageDao.py
+├── myAccountPageDao.py
+├── productPageDao.py
+└── registerPageDao.py
+----
+
+DAO classes extend `ActionAgent` and perform page-level actions.
+
+Example pattern:
+
+[source,python]
+----
+class HomePageDAO(ActionAgent):
+    def __init__(self, runtimeAgent):
+        super().__init__(runtimeAgent)
+        self.homePageLocators = HomePage(runtimeAgent)
+
+    def clickOnMyAccountDropdown(self):
+        self.click(self.homePageLocators.myAccountDropdownHomepage)
+----
+
+DAO layer rule:
+
+[source,text]
+----
+DAO = page-level actions and small page-level reads.
+Scenario = business workflow and assertions.
+Test = thin call into scenario.
+----
+
+=== Scenario Layer
+
+Scenario classes are stored under `scenarios/`.
+
+[source,text]
+----
+scenarios/
+├── loginScenarios.py
+├── logoutScenarios.py
+├── productScenarios.py
+└── registrationScenarios.py
+----
+
+Scenario classes compose DAO actions and perform assertions.
+
+Example flow from login scenario:
+
+[source,text]
+----
+Navigate to login page
+  ↓
+Enter credentials
+  ↓
+Click login
+  ↓
+Assert My Account heading is visible
+----
+
+Scenario layer currently covers:
+
+[cols="1,2", options="header"]
+|===
+| Scenario class | Functional coverage
+
+| `LoginScenarios`
+| Successful login.
+
+| `LogoutScenarios`
+| Login followed by logout confirmation.
+
+| `RegistrationScenarios`
+| Navigate to register page and submit registration details.
+
+| `ProductScenarios`
+| Product search and product comparison flows.
+|===
+
+=== Test Layer
+
+Tests are stored under `tests/`.
+
+[source,text]
+----
+tests/
+├── test_LoginFunctionality.py
+├── test_LogoutFunctionality.py
+├── test_productCompareFunctionality.py
+├── test_registrationUser.py
+└── test_searchFunctionality.py
+----
+
+Tests are intentionally thin.
+
+Example:
+
+[source,python]
+----
+@pytest.mark.testrail(case_id='C46')
+@pytest.mark.sanity
+def test_userLogin(runtimeAgent):
+    LoginScenarios(runtimeAgent).verify_successful_login()
+----
+
+Test layer rule:
+
+[source,text]
+----
+Tests should not directly use page locators.
+Tests should not directly use Playwright page actions.
+Tests should call scenario methods.
+----
+
+== AI Assist Layer
+
+The AI assist layer is optional and separate from the deterministic framework.
+
+It is stored mainly in:
+
+[source,text]
+----
+aiAgents/
+aiInputs/
+aiOutputs/
+----
+
+The uploaded repository currently contains a recording-driven AI workflow:
+
+[source,text]
+----
+Playwright Codegen Recording
+  ↓
+RecordingAgent
+  ↓
+aiInputs/recordings/<run>_recording.py
+aiInputs/runs/<run>.json
+  ↓
+recordedCodePlannerAgent.md
+  ↓
+aiOutputs/plans/<run>_plan.md
+  ↓
+recordedCodeGeneratorAgent.md
+  ↓
+aiOutputs/recommendations/<run>_recommendations.md
+  ↓
+Human review
+  ↓
+Manual update to deterministic framework files
+----
+
+[IMPORTANT]
+====
+The AI layer does not automatically overwrite framework files. The generated recommendations are a handoff for human review.
+====
+
+=== AI Layer Files
+
+[cols="1,2", options="header"]
+|===
+| File / Folder | Purpose
+
+| `aiAgents/recording_agent.py`
+| Python helper class that launches Playwright Codegen, saves a recording file, and creates a run manifest.
+
+| `aiAgents/scripts/record_flow.py`
+| CLI script used to record a browser flow.
+
+| `aiInputs/recordings/`
+| Stores raw Playwright Codegen recordings.
+
+| `aiInputs/runs/`
+| Stores JSON run manifests that connect recordings, planner prompts, generator prompts, and output paths.
+
+| `aiInputs/prompts/recordedCodePlannerAgent.md`
+| Planner prompt. Converts a raw recording into an implementation-ready test plan.
+
+| `aiInputs/prompts/recordedCodeGeneratorAgent.md`
+| Generator prompt. Converts an approved plan into locator, DAO, scenario, and test recommendations.
+
+| `aiOutputs/plans/`
+| Stores planner outputs.
+
+| `aiOutputs/recommendations/`
+| Stores generator outputs / code recommendations.
+|===
+
+=== RecordingAgent Flow
+
+`RecordingAgent` builds and runs a Playwright Codegen command similar to:
+
+[source,text]
+----
+python -m playwright codegen \
+  --target python-pytest \
+  --browser chromium \
+  --output aiInputs/recordings/<run>_recording.py \
+  https://tutorialsninja.com/demo/
+----
+
+The user records a real browser journey, closes Codegen, and the agent creates:
+
+[source,text]
+----
+aiInputs/recordings/<run>_recording.py
+aiInputs/runs/<run>.json
+----
+
+Example manifest discovered in the uploaded project:
+
+[source,json]
+----
+{
+    "run_id": "test",
+    "flow_name": "test",
+    "status": "recorded",
+    "application_url": "https://tutorialsninja.com/demo/",
+    "browser": "chromium",
+    "recording_file": "aiInputs/recordings/test_recording.py",
+    "planner_prompt": "aiInputs/prompts/recordedCodePlannerAgent.md",
+    "generator_prompt": "aiInputs/prompts/recordedCodeGeneratorAgent.md",
+    "planner_output": "aiOutputs/plans/test_plan.md",
+    "generator_output": "aiOutputs/recommendations/test_recommendations.md"
+}
+----
+
+=== Example Recorded Flow
+
+The repository includes:
+
+[source,text]
+----
+aiInputs/recordings/test_recording.py
+----
+
+The recorded flow covers:
+
+[source,text]
+----
+Open OpenCart home page
+  ↓
+Open Laptops & Notebooks category
+  ↓
+Show all Laptops & Notebooks
+  ↓
+Search for imac
+  ↓
+Validate iMac appears
+  ↓
+Open iMac product detail page
+  ↓
+Add iMac to cart
+  ↓
+Validate success message
+----
+
+The raw Codegen recording is not final framework code. It is selector and flow evidence for the planner and generator agents.
+
+=== Planner Agent
+
+`aiInputs/prompts/recordedCodePlannerAgent.md` defines the planner role.
+
+The planner reads the recording and creates a detailed test plan containing:
+
+[source,text]
+----
+recording summary
+scope and traceability
+functional scenarios
+negative and boundary risks
+test data
+assertion strategy
+locator evidence
+implementation handoff
+runtimeAgent update requirements
+----
+
+The sample output in this repository is:
+
+[source,text]
+----
+aiOutputs/plans/test_plan.md
+----
+
+It contains a plan for:
+
+[source,text]
+----
+Product Search And Add To Cart
+----
+
+=== Generator Agent
+
+`aiInputs/prompts/recordedCodeGeneratorAgent.md` defines the generator role.
+
+The generator reads the approved planner output and writes code recommendations for:
+
+[source,text]
+----
+pageObjectLocators/
+dao/
+scenarios/
+tests/
+RuntimeAgent updates where needed
+----
+
+The sample output in this repository is:
+
+[source,text]
+----
+aiOutputs/recommendations/test_recommendations.md
+----
+
+It recommends product-page locator, DAO, scenario, and test changes for the recorded product search/add-to-cart flow.
+
+== Overall End-to-End Flow
+
+=== AI-Assisted Authoring Flow
+
+[source,text]
+----
+Tester
+  ↓
+Runs Codegen recording script
+  ↓
+Browser opens through Playwright Codegen
+  ↓
+Tester performs one real user flow
+  ↓
+RecordingAgent saves raw recording
+  ↓
+RecordingAgent creates run manifest
+  ↓
+Planner Agent analyses recording
+  ↓
+Planner creates automation-ready plan
+  ↓
+Generator Agent reads approved plan
+  ↓
+Generator creates framework code recommendations
+  ↓
+Tester reviews recommendations
+  ↓
+Tester manually updates deterministic framework files
+  ↓
+Pytest executes deterministic automation
+----
+
+=== Deterministic Test Execution Flow
+
+[source,text]
+----
+Command line / Jenkins
+  ↓
+python -m pytest -m sanity --env=qa --browser chromium --report=true --testrail=false -s
+  ↓
+pytest_addoption reads framework options
+  ↓
+pytest_configure configures Allure output path
+  ↓
+pytest_sessionstart prepares reporting folders
+  ↓
+configAgent builds runtime config
+  ↓
+browserInstance launches browser
+  ↓
+isolatedBrowserContext creates clean context
+  ↓
+browserPage opens base URL
+  ↓
+runtimeAgent creates page/config/action/DAO access
+  ↓
+Pytest test calls scenario
+  ↓
+Scenario calls DAOs
+  ↓
+DAO calls ActionAgent
+  ↓
+ActionAgent interacts with Playwright locators
+  ↓
+Application responds
+  ↓
+Scenario assertions validate behavior
+  ↓
+Pytest reports pass/fail
+  ↓
+Allure and optional TestRail are updated
+----
+
+=== Reporting Flow
+
+[source,text]
+----
+--report=true
+  ↓
+Allure raw results written to reports/allure-results/
+  ↓
+Failure screenshot attached directly to Allure
+  ↓
+Allure commandline generates HTML report
+  ↓
+reports/allure-reports/allure_report_YYYYMMDD_HHMMSS/
+----
+
+=== TestRail Flow
+
+[source,text]
+----
+--testrail=true
+  ↓
+pytest_runtest_makereport captures each marked test result
+  ↓
+TestRailAgent creates a run at session finish
+  ↓
+TestRailAgent publishes results for each case ID
+  ↓
+Optional Allure report link is included in the result comment
+----
+
+== Project Structure
+
+[source,text]
+----
+pocAgeneticPythonPlaywrightAutomationFramework/
+├── README.adoc
+├── conftest.py
+├── pytest.ini
+├── requirements.txt
+├── config/
+│   ├── global_config.py
+│   ├── qa_config.py
+│   ├── uat_config.py
+│   └── prod_config.py
+├── coreAgents/
+│   ├── actionAgent.py
+│   ├── allureAgent.py
+│   ├── configAgent.py
+│   ├── loggerAgent.py
+│   ├── pathAgent.py
+│   ├── runtimeAgent.py
+│   └── testrailAgent.py
+├── pageObjectLocators/
+│   ├── homePageLocators.py
+│   ├── loginPageLocators.py
+│   ├── myAccountPageLocators.py
+│   ├── productPageLocators.py
+│   └── registerPageLocators.py
+├── dao/
+│   ├── homePageDao.py
+│   ├── loginPageDao.py
+│   ├── myAccountPageDao.py
+│   ├── productPageDao.py
+│   └── registerPageDao.py
+├── scenarios/
+│   ├── loginScenarios.py
+│   ├── logoutScenarios.py
+│   ├── productScenarios.py
+│   └── registrationScenarios.py
+├── tests/
+│   ├── test_LoginFunctionality.py
+│   ├── test_LogoutFunctionality.py
+│   ├── test_productCompareFunctionality.py
+│   ├── test_registrationUser.py
+│   └── test_searchFunctionality.py
+├── aiAgents/
+│   ├── recording_agent.py
+│   └── scripts/record_flow.py
+├── aiInputs/
+│   ├── recordings/test_recording.py
+│   ├── runs/test.json
+│   └── prompts/
+│       ├── recordedCodePlannerAgent.md
+│       └── recordedCodeGeneratorAgent.md
+├── aiOutputs/
+│   ├── plans/test_plan.md
+│   └── recommendations/test_recommendations.md
+└── reports/
+    ├── allure-results/
+    ├── allure-reports/
+    └── logs/
+----
+
+== How To Install
+
+[source,powershell]
+----
+python -m venv .venv
+.\.venv\Scripts\activate
+pip install -r requirements.txt
+python -m playwright install
+----
+
+== How To Run Tests
+
+Run sanity tests in headed mode:
+
+[source,powershell]
+----
+python -m pytest -m sanity --env=qa --browser chromium --headed --report=true --testrail=false -s
+----
+
+Run sanity tests in headless mode:
+
+[source,powershell]
+----
+python -m pytest -m sanity --env=qa --browser chromium --report=true --testrail=false -s
+----
+
+Run all tests without Allure HTML generation:
+
+[source,powershell]
+----
+python -m pytest --env=qa --browser chromium --report=false --testrail=false -s
+----
+
+Run with TestRail publishing:
+
+[source,powershell]
+----
+$env:TESTRAIL_BASE_URL="https://your-instance.testrail.io"
+$env:TESTRAIL_USERNAME="your_email@example.com"
+$env:TESTRAIL_API_KEY="your_api_key"
+$env:TESTRAIL_PROJECT_ID="2"
+
+python -m pytest -m sanity --env=qa --browser chromium --report=true --testrail=true -s
+----
+
+== How To Record A Flow For AI Planning
+
+Use the included Codegen wrapper:
+
+[source,powershell]
+----
+python aiAgents\scripts\record_flow.py --name product_search_add_to_cart --url https://tutorialsninja.com/demo/ --browser chromium
+----
+
+This produces:
+
+[source,text]
+----
+aiInputs/recordings/product_search_add_to_cart_recording.py
+aiInputs/runs/product_search_add_to_cart.json
+----
+
+Then use the planner prompt:
+
+[source,text]
+----
+aiInputs/prompts/recordedCodePlannerAgent.md
+----
+
+Expected planner output:
+
+[source,text]
+----
+aiOutputs/plans/product_search_add_to_cart_plan.md
+----
+
+Then use the generator prompt:
+
+[source,text]
+----
+aiInputs/prompts/recordedCodeGeneratorAgent.md
+----
+
+Expected generator output:
+
+[source,text]
+----
+aiOutputs/recommendations/product_search_add_to_cart_recommendations.md
+----
+
+== Git Hygiene Recommendations
+
+Contains runtime and local-development files such as `.venv/`, `.idea/`, `.pytest_cache/`, `reports/`, and `.git/` internals.
+
+Recommended `.gitignore` entries:
+
+[source,gitignore]
+----
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.idea/
+reports/
+node_modules/
+.env
+*.env
+----
+
+Keep source files, prompts, and approved documentation in Git. Do not commit virtual environments, generated reports, local IDE metadata, API keys, or secrets.
+
+== Recommended Framework Naming Improvements
+
+The current framework works with these names, but the following naming improvements would make it more consistent:
+
+[cols="1,2", options="header"]
+|===
+| Current style | Suggested style
+
+| `homePageDao.py`
+| `homePageDAO.py` or keep one convention consistently.
+
+| `LoginPage`, `HomePage`, `ProductPage`
+| `LoginPageLocators`, `HomePageLocators`, `ProductPageLocators` for clearer purpose.
+
+| `enterUserEmailAndPassword()`
+| Split into `enterEmail()` and `enterPassword()` for reusable negative testing.
+
+| Hardcoded user data inside DAO
+| Move reusable credentials to config and test-specific data to test data files.
+|===
+
+== Final Architecture Summary
+
+[source,text]
+----
+AI Assist Layer
+  ├── records real flow using Playwright Codegen
+  ├── generates test plan through planner prompt
+  ├── generates code recommendations through generator prompt
+  └── requires human review before framework update
+
+Deterministic Framework Layer
+  ├── executes tests through Pytest
+  ├── manages browser/page/context through conftest.py
+  ├── exposes RuntimeAgent to tests
+  ├── runs Scenario → DAO → ActionAgent → Locator → Playwright
+  ├── creates Allure reports
+  └── optionally publishes TestRail results
+----
+
+The framework is strongest when the layers remain separated:
+
+[source,text]
+----
+AI suggests.
+Human reviews.
+Deterministic framework executes.
+CI/CD remains stable.
+----

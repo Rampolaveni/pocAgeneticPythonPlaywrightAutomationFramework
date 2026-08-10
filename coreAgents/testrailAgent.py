@@ -51,6 +51,20 @@ class TestRailAgent:
         ).lower().strip() == "true"
 
     @classmethod
+    def get_build_identifier(cls) -> str:
+        """
+        Returns Jenkins build number when running from Jenkins.
+        Returns Local Run when running locally.
+        """
+
+        build_number = os.getenv("BUILD_NUMBER", "").strip()
+
+        if build_number:
+            return f"Build #{build_number}"
+
+        return "Local Run"
+
+    @classmethod
     def validate_config(cls) -> bool:
         """
         Validates required TestRail environment variables.
@@ -181,23 +195,17 @@ class TestRailAgent:
 
         env_name = session.config.getoption("env")
         marker = session.config.getoption("markexpr") or "all"
+        build_identifier = cls.get_build_identifier()
 
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now().strftime("%Y-%m-%d")
 
         run_name = (
-            f"OpenCart Automation Regression | {env_name.upper()} | "
-            f"{browser.capitalize()} | {timestamp}"
+            f"OpenCart Automation {marker.title()} | "
+            f"{env_name.upper()} | "
+            f"{browser.title()} | "
+            f"{build_identifier} | "
+            f"{timestamp}"
         )
-
-        description = (
-            "Automation execution from Python Playwright Pytest framework.\n\n"
-            f"Environment: {env_name}\n"
-            f"Browser: {browser}\n"
-            f"Marker: {marker}\n"
-        )
-
-        if allure_report_link:
-            description += f"\nAllure Report: {allure_report_link}\n"
 
         case_ids = sorted(
             list({result["case_id"] for result in cls.TEST_RESULTS})
@@ -205,7 +213,6 @@ class TestRailAgent:
 
         payload = {
             "name": run_name,
-            "description": description,
             "include_all": cls.INCLUDE_ALL_CASES,
             "case_ids": case_ids,
         }

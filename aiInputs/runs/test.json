@@ -1,0 +1,14 @@
+{
+    "run_id": "test",
+    "flow_name": "test",
+    "status": "recorded",
+    "created_at": "2026-08-09T15:47:03+10:00",
+    "application_url": "https://tutorialsninja.com/demo/",
+    "browser": "chromium",
+    "recording_file": "aiInputs/recordings/test_recording.py",
+    "planner_prompt": "aiInputs/prompts/recordedCodePlannerAgent.md",
+    "generator_prompt": "aiInputs/prompts/recordedCodeGeneratorAgent.md",
+    "planner_output": "aiOutputs/plans/test_plan.md",
+    "generator_output": "aiOutputs/recommendations/test_recommendations.md",
+    "error": null
+}=

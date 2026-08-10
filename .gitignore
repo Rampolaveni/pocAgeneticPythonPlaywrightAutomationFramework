@@ -24,8 +24,7 @@ allure-report/
 node_modules/
 
 # AI generated outputs
-aiOutputs/generatedCode/
-aiOutputs/healingReports/
+aiOutputs/
 
 # OS files
 .DS_Store
