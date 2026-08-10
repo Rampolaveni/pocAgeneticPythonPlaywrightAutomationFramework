@@ -160,7 +160,7 @@ pipeline {
 
     post {
         always {
-            echo 'Archiving framework reports and logs...'
+            echo 'Publishing and archiving framework reports...'
 
             archiveArtifacts(
                 artifacts: 'reports/logs/*.log,reports/junit/*.xml,reports/allure-results/**,reports/allure-reports/**',
@@ -170,6 +170,13 @@ pipeline {
             junit(
                 testResults: 'reports/junit/*.xml',
                 allowEmptyResults: true
+            )
+
+            allure(
+                includeProperties: false,
+                jdk: '',
+                reportBuildPolicy: 'ALWAYS',
+                results: [[path: 'reports/allure-results']]
             )
         }
     }
